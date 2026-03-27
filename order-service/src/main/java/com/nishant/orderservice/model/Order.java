@@ -1,9 +1,20 @@
 package com.nishant.orderservice.model;
 
-import jakarta.persistence.*;
-import lombok.*;
-import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.UpdateTimestamp;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
+import jakarta.persistence.Table;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -38,30 +49,34 @@ public class Order {
     @Column(nullable = false)
     private OrderStatus status;
 
-    // Idempotency key — prevents double processing
     @Column(unique = true)
     private String idempotencyKey;
 
     private String paymentId;
     private String failureReason;
 
-    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @UpdateTimestamp
+    @Column(nullable = false)
     private LocalDateTime updatedAt;
 
-    // ── STATE MACHINE ────────────────────────────────────────
-    // Valid transitions:
-    // CREATED → PAYMENT_PENDING
-    // PAYMENT_PENDING → PAID
-    // PAYMENT_PENDING → FAILED
-    // PAID → REFUNDED
+    @PrePersist
+    void onCreate() {
+        LocalDateTime now = LocalDateTime.now();
+        this.createdAt = now;
+        this.updatedAt = now;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        this.updatedAt = LocalDateTime.now();
+    }
 
     public void transitionTo(OrderStatus newStatus) {
         if (!isValidTransition(this.status, newStatus)) {
             throw new IllegalStateException(
-                String.format("Invalid transition: %s → %s", this.status, newStatus)
+                    String.format("Invalid transition: %s -> %s", this.status, newStatus)
             );
         }
         this.status = newStatus;
@@ -69,10 +84,10 @@ public class Order {
 
     private boolean isValidTransition(OrderStatus from, OrderStatus to) {
         return switch (from) {
-            case CREATED         -> to == OrderStatus.PAYMENT_PENDING;
+            case CREATED -> to == OrderStatus.PAYMENT_PENDING;
             case PAYMENT_PENDING -> to == OrderStatus.PAID || to == OrderStatus.FAILED;
-            case PAID            -> to == OrderStatus.REFUNDED;
-            case FAILED, REFUNDED -> false; // terminal states
+            case PAID -> to == OrderStatus.REFUNDED;
+            case FAILED, REFUNDED -> false;
         };
     }
 }
